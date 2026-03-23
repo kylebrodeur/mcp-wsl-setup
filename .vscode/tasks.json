@@ -1,0 +1,18 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Fix MCP pnpm path",
+      "type": "shell",
+      "command": "pnpm",
+      "args": [
+        "dlx",
+        "mcp-wsl-setup"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    }
+  ]
+}
