@@ -1,89 +1,23 @@
 # npm tarballs
 *.tgz
 
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
+# dependencies
+node_modules/
 
-# Virtual environments
-.env
-.venv
-env/
-venv/
-ENV/
-.python-version
-
-# IDEs
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.DS_Store
-
-# UV
-# Uncomment if you want to track uv.lock
-# uv.lock
-
-# Project specific - temporary and output files
-temp_audio/
-transcriptions/*.txt
-transcriptions/*.vtt
-transcriptions/*.json
-transcriptions/*.zip
+# logs
 *.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# Keep transcriptions directory but ignore contents
-!transcriptions/.gitkeep
+# local environment files
+.env
+.env.*
 
-# Legacy directory - optional, uncomment to not track
-# legacy/
+# test/coverage output
+coverage/
 
-# Test files
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
-.hypothesis/
-*.cover
-.cache
-coverage.xml
-
-# Type checking
-.mypy_cache/
-.dmypy.json
-.pytype/
-
-# Video files - keep directory but ignore large files
-video_files/*.mp4
-video_files/*.avi
-video_files/*.mov
-video_files/*.mkv
-video_files/*.flv
-video_files/*.wmv
-video_files/*.m4v
-video_files/*.webm
-
-legacy/
-legacy/*
-docs/_archive/
+# OS/editor noise
+.DS_Store
+Thumbs.db
