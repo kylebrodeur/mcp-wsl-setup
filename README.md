@@ -61,7 +61,7 @@ environment is WSL but VS Code is a Windows host application.
 | pnpm binary       | `~/.local/share/fnm/aliases/default/lib/node_modules/corepack/dist/pnpm.js` |
 | PNPM_HOME (final) | `~/.local/share/pnpm` (Linux-side only)                       |
 | VS Code           | Windows host — reads `%APPDATA%\Code\User\mcp.json`           |
-| MCP config        | `/mnt/c/Users/kyleb/AppData/Roaming/Code/User/mcp.json`      |
+| MCP config        | `/mnt/c/Users/<you>/AppData/Roaming/Code/User/mcp.json` (auto-detected from `%APPDATA%`) |
 
 The key tension: **VS Code runs on Windows, but all the tools live in WSL.**
 Every stdio MCP server VS Code starts is launched from a Windows process (or
@@ -508,7 +508,7 @@ After the task completes, reload the VS Code window (`Ctrl+Shift+P` →
    ```
 
 2. **Adjust the hardcoded username** in `resolveTargetPath()` if your Windows
-   username is not `kyleb`:
+   username differs (the script now derives it from `%APPDATA%` automatically):
 
    ```js
    // In resolveTargetPath(), line ~40:

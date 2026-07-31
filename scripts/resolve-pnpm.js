@@ -34,8 +34,26 @@ function resolveTargetPath() {
   }
 
   if (isWSL()) {
-    // Default to the Windows host path when running from WSL
-    return path.join("/mnt/c", "Users", "kyleb", "AppData", "Roaming", "Code", "User", "mcp.json");
+    // Default to the Windows host path when running from WSL. Ask Windows for
+    // %APPDATA% rather than hardcoding a username — this used to be a literal
+    // path, which worked on exactly one machine.
+    const r = spawnSync("cmd.exe", ["/c", "echo %APPDATA%"], { encoding: "utf8" });
+    const appdata = r.status === 0 ? (r.stdout || "").trim() : "";
+    if (appdata && /^[A-Za-z]:\\/.test(appdata)) {
+      const drive = appdata[0].toLowerCase();
+      const rest = appdata.slice(3).replace(/\\/g, "/");
+      return path.join("/mnt", drive, rest, "Code", "User", "mcp.json");
+    }
+    // Fall back to discovery if interop is unavailable.
+    const usersDir = "/mnt/c/Users";
+    try {
+      for (const u of fs.readdirSync(usersDir)) {
+        const p = path.join(usersDir, u, "AppData", "Roaming", "Code", "User", "mcp.json");
+        if (fs.existsSync(p)) return p;
+      }
+    } catch {}
+    warn("could not determine the Windows APPDATA path; pass --target explicitly");
+    return path.join(home, ".config", "Code", "User", "mcp.json");
   }
 
   if (process.platform === "darwin") {
@@ -75,6 +93,26 @@ function parseLegacyWslShellPnpmArgs(existingArgs) {
   if (!pnpmJsMatch || !pnpmJsMatch[1]) return null;
 
   return pnpmJsMatch[1].trim().split(/\s+/);
+}
+
+// True when args look like "-e <absolute-path-to-an-executable> ..." where that
+// executable is not node/pnpm — i.e. the server runs its own binary and this
+// script has no business rewriting it.
+function isDirectBinaryInvocation(args) {
+  if (!Array.isArray(args) || args.length < 2) return false;
+  if (args[0] !== "-e") return false;
+  const target = args[1];
+  if (typeof target !== "string" || !target.startsWith("/")) return false;
+  if (/(?:^|\/)(node|npm|npx|pnpm|pnpx|corepack)(?:\.exe)?$/i.test(target)) return false;
+  if (/\.(js|cjs|mjs)$/i.test(target)) return false;
+  try {
+    fs.accessSync(target, fs.constants.X_OK);
+    return true;
+  } catch {
+    // Path is gone. Leave it alone and let the doctor/user notice, rather than
+    // silently converting a broken entry into a differently broken one.
+    return true;
+  }
 }
 
 function stripLegacyWslPrefixes(args) {
@@ -121,6 +159,14 @@ function detectPnpm(targetIsWindows, runtimeIsWindows) {
   const fnmNode = path.join(fnmDefaultRoot, "bin", "node");
   const fnmBinDir = path.dirname(fnmNode);
   const wslBasePath = `${fnmBinDir}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`;
+  // The standalone pnpm is a self-contained executable under $PNPM_HOME/bin. It
+  // is preferred over corepack's shim because the shim lives INSIDE the fnm
+  // version tree: switching Node versions changes it, and if that tree is ever
+  // wiped or rebuilt the shim becomes a dangling path while `node` still works.
+  // A config pointing at it then fails silently. The standalone binary is
+  // version-independent.
+  const standalonePnpm = pnpmHome ? path.join(pnpmHome, "bin", "pnpm") : null;
+
   const fnmPnpmJs = path.join(
     fnmDefaultRoot,
     "lib",
@@ -133,6 +179,18 @@ function detectPnpm(targetIsWindows, runtimeIsWindows) {
   // If we're running in WSL but writing a Windows user mcp.json, force execution through wsl.exe.
   // This keeps MCP launches stable even when Windows host PATH does not include pnpm.
   if (isWSL() && targetIsWindows) {
+    if (standalonePnpm && fs.existsSync(standalonePnpm)) {
+      // Note: these branches return directly rather than collecting into
+      // `candidates`, so this must return too — pushing here would be dead code.
+      return {
+        command: "wsl.exe",
+        commandPrefixArgs: ["-e", "env", `PATH=${wslBasePath}`, standalonePnpm],
+        pnpmHome,
+        pathParts: [],
+        discoveredCommand: standalonePnpm,
+        manageEnv: false,
+      };
+    }
     if (fs.existsSync(fnmNode) && fs.existsSync(fnmPnpmJs)) {
       return {
         command: "wsl.exe",
@@ -162,6 +220,19 @@ function detectPnpm(targetIsWindows, runtimeIsWindows) {
         manageEnv: false,
       };
     }
+  }
+
+  if (!runtimeIsWindows && !targetIsWindows && standalonePnpm && fs.existsSync(standalonePnpm)) {
+    const pathParts = [path.dirname(standalonePnpm)];
+    if (pnpmHome) pathParts.push(pnpmHome);
+    return {
+      command: standalonePnpm,
+      commandPrefixArgs: [],
+      pnpmHome,
+      pathParts,
+      discoveredCommand: standalonePnpm,
+      manageEnv: true,
+    };
   }
 
   if (!runtimeIsWindows && !targetIsWindows && fs.existsSync(fnmNode) && fs.existsSync(fnmPnpmJs)) {
@@ -194,8 +265,19 @@ function detectPnpm(targetIsWindows, runtimeIsWindows) {
     candidates.push(path.join(base, "pnpm.cmd"));
     candidates.push(path.join(base, "pnpm.exe"));
     if (isWSL()) {
-      candidates.push("/mnt/c/Users/kyleb/AppData/Roaming/pnpm/pnpm.cmd");
-      candidates.push("/mnt/c/Users/kyleb/AppData/Roaming/pnpm/pnpm.exe");
+      // Derive the Windows pnpm home from %APPDATA% instead of hardcoding a
+      // username. The literal path here previously worked on one machine only.
+      const r = spawnSync("cmd.exe", ["/c", "echo %APPDATA%"], { encoding: "utf8" });
+      const appdata = r.status === 0 ? (r.stdout || "").trim() : "";
+      if (/^[A-Za-z]:\\/.test(appdata)) {
+        const wslAppData = path.join(
+          "/mnt",
+          appdata[0].toLowerCase(),
+          appdata.slice(3).replace(/\\/g, "/")
+        );
+        candidates.push(path.join(wslAppData, "pnpm", "pnpm.cmd"));
+        candidates.push(path.join(wslAppData, "pnpm", "pnpm.exe"));
+      }
     }
   } else {
     candidates.push(path.join(os.homedir(), ".local", "share", "pnpm", "pnpm"));
@@ -343,6 +425,7 @@ async function main() {
     );
   }
 
+  const skipped = [];
   for (const serverName of serverNames) {
     const existing = config.servers[serverName] || {};
 
@@ -391,6 +474,16 @@ async function main() {
       normalizedExistingArgs = stripLegacyWslPrefixes(normalizedExistingArgs);
     }
 
+    // Do not adopt a server that isn't a pnpm/node invocation in the first place.
+    // Some MCP servers ship a self-contained executable (its own bundled runtime)
+    // and are launched directly as `wsl.exe -e /path/to/bin ...`. Prepending the
+    // pnpm shim to those produces `node pnpm.js -e /path/to/bin ...`, which is
+    // nonsense and silently breaks a server that was working.
+    if (isDirectBinaryInvocation(normalizedExistingArgs)) {
+      skipped.push(serverName);
+      continue;
+    }
+
     if ((commandPrefixArgs || []).length) {
       while (
         commandPrefixArgs.every((prefixArg, idx) => normalizedExistingArgs[idx] === prefixArg)
@@ -434,6 +527,9 @@ async function main() {
   fs.writeFileSync(targetPath, JSON.stringify(config, null, 2));
 
   log(`Updated ${targetPath}`);
+  if (skipped.length) {
+    log(`  skipped (not a pnpm invocation, left untouched): ${skipped.join(", ")}`);
+  }
   log(`  servers: ${serverNames.join(", ")}`);
   log(`  command: ${command}`);
   if (pnpmHome) log(`  PNPM_HOME: ${pnpmHome}`);
