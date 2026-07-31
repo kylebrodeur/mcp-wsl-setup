@@ -1,6 +1,6 @@
 {
   "name": "@kylebrodeur/mcp-wsl-setup",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "Fix VS Code MCP server stdio launches when running Node/pnpm inside WSL via fnm",
   "bin": {
     "mcp-wsl-setup": "./scripts/resolve-pnpm.js"
